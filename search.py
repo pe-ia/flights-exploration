@@ -1,7 +1,6 @@
 import time
 import argparse
-
-from playwright.sync_api import sync_playwright, Page
+from playwright.sync_api import sync_playwright, Page, TimeoutError
 
 
 def wait(duration: float = 1.0) -> None:
@@ -29,10 +28,51 @@ def handle_consent(page: Page, delay: float) -> None:
             wait(delay)
 
 
-def search_flights(page: Page, from_city: str, to_city: str, departure_date: str, return_date: str,
-                   delay: float) -> Page:
+def scrape_flight_details(page: Page, section: str) -> list:
     """
-    Searches for flights on Google Flights.
+    Scrapes flight details from the current section of the page.
+
+    Args:
+        page (Page): The current page instance.
+        section (str): The section identifier (e.g., departing or returning).
+
+    Returns:
+        list: A list of dictionaries containing flight details.
+    """
+    flight_details = []
+    flights = page.query_selector_all('.pIav2d')  # Generic selector for each flight
+
+    for flight in flights:
+        try:
+            # Extract elements using the specified selectors
+            time_element = flight.query_selector('#mv1WYe')
+            airline_element = flight.query_selector('.sSHqwe.tPgKwe.ogfYpf')
+            duration_element = flight.query_selector('.gvkrdb.AdWm1c.tPgKwe.ogfYpf')
+            price_element = flight.query_selector('.BVAVmf.I11szd.POX3ye')
+
+            # Extract text or set to "N/A" if element is not found
+            time = time_element.get_attribute('aria-label') if time_element else "N/A"
+            airline = airline_element.inner_text() if airline_element else "N/A"
+            duration = duration_element.inner_text() if duration_element else "N/A"
+            price = price_element.inner_text() if price_element else "N/A"
+
+            flight_details.append({
+                'time': time,
+                'airline': airline,
+                'duration': duration,
+                'price': price,
+            })
+
+        except Exception as e:
+            print(f"Error scraping {section} flight details: {e}")
+
+    return flight_details
+
+
+def search_and_scrape_flights(page: Page, from_city: str, to_city: str, departure_date: str, return_date: str,
+                              delay: float) -> tuple:
+    """
+    Searches for flights on Google Flights and scrapes the flight details.
 
     Args:
         page (Page): The flights search page.
@@ -41,6 +81,9 @@ def search_flights(page: Page, from_city: str, to_city: str, departure_date: str
         departure_date (str): The departure date in MM-DD-YYYY format.
         return_date (str): The return date in MM-DD-YYYY format.
         delay (float): The delay duration between actions in seconds.
+
+    Returns:
+        tuple: Two lists containing departing and returning flight details.
     """
 
     # Enter departure city
@@ -79,17 +122,41 @@ def search_flights(page: Page, from_city: str, to_city: str, departure_date: str
 
     # Perform the flight search
     page.query_selector('.MXvFbd .VfPpkd-LgbsSe').click()
-    wait_for_element(page, '.zISZ5c button')  # Wait for the results page to load
+    wait_for_element(page, '[jsname="Ud7fr"]')  # Wait for the Top Departing Flights section to load
 
-    # Expand the results
-    page.query_selector('.zISZ5c button').click()
+    # Scrape departing flights details
+    departing_flight_data = scrape_flight_details(page, "departing")
 
-    return page
+    # Iterate over each departing flight
+    departing_flights = page.query_selector_all('.pIav2d')  # Selector for each departing flight
+    returning_flight_data = []
+
+    for index in range(len(departing_flights)):
+        departing_flights = page.query_selector_all('.pIav2d')
+        if index < len(departing_flights):
+            try:
+                departing_flights[index].click()  # Click on each departing flight
+                wait_for_element(page, '[jsname="Ud7fr"]')  # Wait for the Top Returning Flights section to load
+
+                # Scrape returning flights details without clicking
+                returning_flight_data.extend(scrape_flight_details(page, "returning"))
+
+                # Click the button to go to the next departing flight
+                next_button = page.query_selector('#Su03E')
+                if next_button:
+                    next_button.click()
+                    wait(delay)
+            except TimeoutError as e:
+                print(f"Timeout error while clicking: {e}")
+            except Exception as e:
+                print(f"Error during clicking departing flight: {e}")
+
+    return departing_flight_data, returning_flight_data
 
 
 def main() -> None:
     """
-    Main function to initiate flight search using command-line arguments.
+    Main function to initiate flight search and scraping using command-line arguments.
     """
     parser = argparse.ArgumentParser(description='Search for flights on Google Flights.')
     parser.add_argument('from_city', type=str, help='The departure city.')
@@ -107,8 +174,19 @@ def main() -> None:
 
         handle_consent(page, args.delay)
 
-        page = search_flights(page, args.from_city, args.to_city, args.departure_date, args.return_date, args.delay)
-        time.sleep(10)
+        departing_flight_data, returning_flight_data = search_and_scrape_flights(
+            page, args.from_city, args.to_city, args.departure_date, args.return_date, args.delay
+        )
+
+        # Output the flight details
+        print("Departing Flights:")
+        for flight in departing_flight_data:
+            print(flight)
+
+        print("\nReturning Flights:")
+        for flight in returning_flight_data:
+            print(flight)
+
         page.close()
 
 
