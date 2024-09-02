@@ -133,23 +133,22 @@ def search_and_scrape_flights(page: Page, from_city: str, to_city: str, departur
 
     for index in range(len(departing_flights)):
         departing_flights = page.query_selector_all('.pIav2d')
-        if index < len(departing_flights):
-            try:
-                departing_flights[index].click()  # Click on each departing flight
-                wait_for_element(page, '[jsname="Ud7fr"]')  # Wait for the Top Returning Flights section to load
+        try:
+            departing_flights[index].click()  # Click on each departing flight
+            wait_for_element(page, '[jsname="Ud7fr"]')  # Wait for the Top Returning Flights section to load
 
-                # Scrape returning flights details without clicking
-                returning_flight_data.extend(scrape_flight_details(page, "returning"))
+            # Scrape returning flights details without clicking
+            returning_flight_data.append(scrape_flight_details(page, "returning"))
 
-                # Click the button to go to the next departing flight
-                next_button = page.query_selector('.pkGNSd')
-                if next_button:
-                    next_button.click()
-                    wait(delay)
-            except TimeoutError as e:
-                print(f"Timeout error while clicking: {e}")
-            except Exception as e:
-                print(f"Error during clicking departing flight: {e}")
+            # Click the button to go to the next departing flight
+            next_button = page.query_selector('.pkGNSd')
+            if next_button:
+                next_button.click()
+                wait(delay)
+        except TimeoutError as e:
+            print(f"Timeout error while clicking: {e}")
+        except Exception as e:
+            print(f"Error during clicking departing flight: {e}")
 
     return departing_flight_data, returning_flight_data
 
@@ -179,13 +178,13 @@ def main() -> None:
         )
 
         # Output the flight details
-        print("Departing Flights:")
-        for flight in departing_flight_data:
-            print(flight)
-
-        print("\nReturning Flights:")
-        for flight in returning_flight_data:
-            print(flight)
+        print("Flights:")
+        for index in range(len(departing_flight_data)):
+            print("\nDeparting flight:")
+            print(departing_flight_data[index])
+            print("Returning flights: ")
+            for flight in returning_flight_data[index]:
+                print(flight)
 
         page.close()
 
