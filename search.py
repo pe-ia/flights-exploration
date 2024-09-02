@@ -142,7 +142,7 @@ def search_and_scrape_flights(page: Page, from_city: str, to_city: str, departur
                 returning_flight_data.extend(scrape_flight_details(page, "returning"))
 
                 # Click the button to go to the next departing flight
-                next_button = page.query_selector('#Su03E')
+                next_button = page.query_selector('.pkGNSd')
                 if next_button:
                     next_button.click()
                     wait(delay)
