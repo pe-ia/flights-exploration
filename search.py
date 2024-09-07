@@ -1,5 +1,9 @@
 import time
 import argparse
+from datetime import datetime
+import re
+from typing import Optional, Tuple
+
 from playwright.sync_api import sync_playwright, Page, TimeoutError
 
 
@@ -153,15 +157,44 @@ def search_and_scrape_flights(page: Page, from_city: str, to_city: str, departur
     return departing_flight_data, returning_flight_data
 
 
+def parse_query(query: str) -> Optional[Tuple[str, str, str, Optional[str]]]:
+    """
+    Parses a query string to extract departure and return flight details.
+
+    Args:
+        query (str): The input string in the format "<from> <to> <departure_date> [return_date]".
+
+    Returns:
+        Optional[Tuple[str, str, str, Optional[str]]]: A tuple containing from_city, to_city, departure_date,
+        and optionally return_date. Returns None if the input format is invalid or dates are in the wrong format.
+    """
+    # Regex pattern to match the query format
+    pattern = r"(\w+) (\w+) (\d{2}-\d{2}-\d{4})(?: (\d{2}-\d{2}-\d{4}))?"
+    match = re.match(pattern, query)
+
+    if not match:
+        return None
+
+    from_city: str = match.group(1)
+    to_city: str = match.group(2)
+    departure_date: str = match.group(3)
+    return_date: Optional[str] = match.group(4) if match.group(4) else None
+
+    # Validate date format
+    try:
+        datetime.strptime(departure_date, '%d-%m-%Y')
+        if return_date:
+            datetime.strptime(return_date, '%d-%m-%Y')
+    except ValueError:
+        return None
+
+    return from_city, to_city, departure_date, return_date
+
 def main() -> None:
     """
-    Main function to initiate flight search and scraping using command-line arguments.
+    Main function to initiate flight search and scraping using command-line input.
     """
-    parser = argparse.ArgumentParser(description='Search for flights on Google Flights.')
-    parser.add_argument('from_city', type=str, help='The departure city.')
-    parser.add_argument('to_city', type=str, help='The destination city.')
-    parser.add_argument('departure_date', type=str, help='The departure date in MM-DD-YYYY format.')
-    parser.add_argument('return_date', type=str, help='The return date in MM-DD-YYYY format.')
+    parser = argparse.ArgumentParser(description='Search for flights on Google Flights. Type exit to exit.')
     parser.add_argument('--delay', type=float, default=1.0, help='The delay duration between actions in seconds.')
 
     args = parser.parse_args()
@@ -173,18 +206,37 @@ def main() -> None:
 
         handle_consent(page, args.delay)
 
-        departing_flight_data, returning_flight_data = search_and_scrape_flights(
-            page, args.from_city, args.to_city, args.departure_date, args.return_date, args.delay
-        )
+        while True:
+            query = input("<from> <to> <departure_date> [return_date] > ")
 
-        # Output the flight details
-        print("Flights:")
-        for index in range(len(departing_flight_data)):
-            print("\nDeparting flight:")
-            print(departing_flight_data[index])
-            print("Returning flights: ")
-            for flight in returning_flight_data[index]:
-                print(flight)
+            if query == "exit":
+                break
+
+            parsed_query = parse_query(query)
+
+            if parsed_query:
+                # TODO: Only search one-way flights if no return date
+                from_city, to_city, departure_date, return_date = parsed_query
+                departing_flight_data, returning_flight_data = search_and_scrape_flights(
+                    page, from_city, to_city, departure_date, return_date, args.delay
+                )
+            else:
+                print(
+                    "Invalid query format. Please use <from> <to> <departure_date> [return_date]. Date should be in "
+                    "DD-MM-YYYY format.")
+
+            # Output the flight details
+            print("Flights:")
+            for index in range(len(departing_flight_data)):
+                print("\nDeparting flight:")
+                print(departing_flight_data[index])
+                # TODO: Skip if no return date
+                print("Returning flights: ")
+                for flight in returning_flight_data[index]:
+                    print(flight)
+
+            # TODO: Click "Flights" button instead to avoid refresh - google flights is single-page
+            page.goto('https://www.google.com/travel/flights?hl=en-US&curr=USD')
 
         page.close()
 
